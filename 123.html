@@ -1,0 +1,487 @@
+
+<!DOCTYPE html>
+
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Pylint AI Issue Resolver</title>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Iconify -->
+<script src="https://code.iconify.design/3/3.1.1/iconify.min.js"></script>
+<style>
+        /* 自定义滚动条样式 */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+
+        /* 动画定义 */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        /* 代码差异视图行号 */
+        .line-num {
+            user-select: none;
+            color: #999;
+            text-align: right;
+            padding-right: 8px;
+            min-width: 24px;
+        }
+    </style>
+</head>
+<body class="bg-[#F5F5F5] font-sans text-[#595959] antialiased overflow-hidden h-screen flex flex-col">
+<!-- 顶部导航栏 -->
+<header class="h-20 bg-white border-b border-[#F0F0F0] flex items-center justify-between px-8 shrink-0 z-20">
+<div class="flex items-center gap-4">
+<h1 class="text-[#262626] text-xl font-semibold tracking-tight">Pylint Issue Resolver</h1>
+<span class="bg-blue-50 text-[#1890FF] text-xs px-2 py-1 rounded border border-blue-100">v2.4.0</span>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 mr-4 text-sm text-[#8C8C8C]">
+<span class="icon-[carbon--dot-mark] text-green-500 text-lg"></span>
+                后端连接正常
+            </div>
+<button class="flex items-center gap-2 px-4 py-2 bg-white border border-[#D9D9D9] text-[#595959] rounded-md hover:border-[#1890FF] hover:text-[#1890FF] transition-colors text-sm font-medium">
+<span class="icon-[mdi--filter-variant]"></span>
+                Filter
+            </button>
+<button class="flex items-center gap-2 px-6 py-2 bg-[#FF4D4F] text-white rounded-md hover:bg-[#ff7875] transition-colors shadow-sm text-sm font-medium" onclick="refreshIssues()">
+<span class="icon-[mdi--refresh]"></span>
+                Refresh Issues
+            </button>
+<div class="w-8 h-8 rounded-full bg-gray-200 overflow-hidden border border-gray-300 ml-2">
+<img alt="User Avatar" class="w-full h-full object-cover opacity-80" id="avatar-img" src="https://modao.cc/agent-py/media/generated_images/2025-12-16/b738dd479ccd4b438c97d9f0188e99e5.jpg"/>
+</div>
+</div>
+</header>
+<!-- 主体内容区 -->
+<main class="flex-1 overflow-hidden relative flex justify-center">
+<!-- 核心容器 -->
+<div class="w-full max-w-[1440px] px-8 py-6 h-full flex gap-6">
+<!-- 左侧列表区域 (70% - 实际上因为抽屉是覆盖式的，这里我们让它占满，抽屉出来时不挤压，而是覆盖) -->
+<div class="flex-1 bg-white rounded-lg border border-[#F0F0F0] shadow-sm flex flex-col overflow-hidden h-full">
+<!-- 列表头部 -->
+<div class="px-6 py-4 border-b border-[#F0F0F0] flex items-center justify-between shrink-0 bg-white">
+<div class="flex items-center gap-3">
+<h2 class="text-[#262626] font-semibold text-base">Pylint Issues</h2>
+<span class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full text-xs font-medium" id="issue-count">0</span>
+</div>
+<!-- 状态图例 (Legend) -->
+<div class="flex items-center gap-2 text-xs">
+<span class="text-[#8C8C8C] mr-2 font-medium">Legend:</span>
+<div class="flex items-center gap-1 px-2 py-1 rounded bg-[#F5F5F5] border border-[#D9D9D9] text-[#595959]">
+<span class="icon-[mdi--circle-outline] text-gray-400"></span> INIT
+                        </div>
+<div class="flex items-center gap-1 px-2 py-1 rounded bg-[#E6F7FF] border border-[#91D5FF] text-[#1890FF]">
+<span class="icon-[mdi--loading] animate-spin"></span> IN_PROGRESS
+                        </div>
+<div class="flex items-center gap-1 px-2 py-1 rounded bg-[#FFFBE6] border border-[#FFE58F] text-[#FAAD14]">
+<span class="icon-[mdi--clock-outline]"></span> PENDING
+                        </div>
+<div class="flex items-center gap-1 px-2 py-1 rounded bg-[#F6FFED] border border-[#B7EB8F] text-[#52C41A]">
+<span class="icon-[mdi--check-circle]"></span> DIV_ONE
+                        </div>
+<div class="flex items-center gap-1 px-2 py-1 rounded bg-[#FFF1F0] border border-[#FFA39E] text-[#FF4D4F]">
+<span class="icon-[mdi--close-circle]"></span> REJECTED
+                        </div>
+</div>
+</div>
+<!-- 列表内容表格 -->
+<div class="flex-1 overflow-y-auto custom-scrollbar relative">
+<table class="w-full text-left border-collapse">
+<thead class="bg-[#FAFAFA] sticky top-0 z-10 text-xs font-semibold text-[#595959] uppercase tracking-wider">
+<tr>
+<th class="px-6 py-3 border-b border-[#F0F0F0] w-48">Status</th>
+<th class="px-6 py-3 border-b border-[#F0F0F0] w-32">Issue ID</th>
+<th class="px-6 py-3 border-b border-[#F0F0F0]">File Path</th>
+<th class="px-6 py-3 border-b border-[#F0F0F0]">Description</th>
+<th class="px-6 py-3 border-b border-[#F0F0F0] w-32">Severity</th>
+<th class="px-6 py-3 border-b border-[#F0F0F0] w-32 text-right">Action</th>
+</tr>
+</thead>
+<tbody class="text-sm" id="issues-table-body">
+<!-- JS将动态填充这里 -->
+</tbody>
+</table>
+<!-- 空状态/加载中提示 -->
+<div class="hidden absolute inset-0 bg-white/80 z-20 flex flex-col items-center justify-center" id="loading-state">
+<span class="icon-[mdi--loading] animate-spin text-4xl text-[#1890FF] mb-2"></span>
+<p class="text-[#8C8C8C]">Loading repository issues...</p>
+</div>
+</div>
+<!-- 列表底部信息 -->
+<div class="px-6 py-3 border-t border-[#F0F0F0] bg-[#FAFAFA] text-xs text-[#8C8C8C] flex justify-between shrink-0">
+<span id="last-updated">Last updated: Just now</span>
+<span>Showing 1-10 of 10 items</span>
+</div>
+</div>
+</div>
+</main>
+<!-- 底部状态栏 -->
+<footer class="h-8 bg-[#F0F0F0] border-t border-[#D9D9D9] px-4 flex items-center justify-between text-xs text-[#8C8C8C] shrink-0">
+<div class="flex items-center gap-4">
+<span>System: <span class="text-green-600 font-medium">Online</span></span>
+<span>API Latency: 45ms</span>
+</div>
+<div>
+            © 2025 AI Code Assistant Platform
+        </div>
+</footer>
+<!-- 右侧抽屉覆盖层 (Backdrop) -->
+<div class="fixed inset-0 bg-black/20 backdrop-blur-[1px] z-30 opacity-0 pointer-events-none transition-opacity duration-300" id="drawer-backdrop" onclick="closeDrawer()"></div>
+<!-- 右侧抽屉 (Drawer) -->
+<div class="fixed top-0 right-0 h-full w-[500px] bg-white shadow-2xl z-40 transform translate-x-full transition-transform duration-300 ease-in-out flex flex-col border-l border-[#F0F0F0]" id="issue-drawer">
+<!-- 抽屉头部 -->
+<div class="px-6 py-5 border-b border-[#F0F0F0] flex items-center justify-between bg-white shrink-0">
+<div>
+<h3 class="text-lg font-semibold text-[#262626]" id="drawer-title">Issue Details</h3>
+<p class="text-xs text-[#8C8C8C] mt-1 flex items-center gap-1">
+<span class="icon-[mdi--file-outline]"></span>
+<span id="drawer-file">src/main.py</span>
+</p>
+</div>
+<button class="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors" onclick="closeDrawer()">
+<span class="icon-[mdi--close] text-xl"></span>
+</button>
+</div>
+<!-- 抽屉内容 (滚动区) -->
+<div class="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6 bg-white">
+<!-- Issue Summary -->
+<section class="space-y-3">
+<h4 class="text-sm font-semibold text-[#595959] flex items-center gap-2">
+<span class="w-1 h-4 bg-[#1890FF] rounded-full block"></span>
+                    Issue Summary
+                </h4>
+<div class="bg-[#FAFAFA] border border-[#F0F0F0] rounded-lg p-4 text-sm text-[#595959] leading-relaxed">
+<div class="flex items-start gap-2 mb-2">
+<span class="icon-[mdi--alert-circle-outline] text-red-500 mt-0.5"></span>
+<p class="font-medium text-[#262626]" id="drawer-desc">Variable 'x' is defined but never used</p>
+</div>
+<p class="text-[#8C8C8C] text-xs pl-6">Detection mechanism based on AST analysis found an unused local variable in the function scope.</p>
+</div>
+</section>
+<!-- AI Recommendation & Prompt Logs -->
+<section class="space-y-3">
+<div class="flex items-center justify-between">
+<h4 class="text-sm font-semibold text-[#595959] flex items-center gap-2">
+<span class="w-1 h-4 bg-[#1890FF] rounded-full block"></span>
+                        AI Recommendation
+                    </h4>
+<button class="text-xs text-[#1890FF] hover:underline flex items-center gap-1">
+                        Show Logs <span class="icon-[mdi--chevron-down]"></span>
+</button>
+</div>
+<!-- Prompt Logs (Simplified) -->
+<div class="bg-[#2B2B2B] rounded-lg p-3 text-xs font-mono text-green-400 overflow-x-auto">
+<div class="opacity-50 border-b border-gray-700 pb-2 mb-2">Prompt ID: #GEN-2025-X92</div>
+<p>&gt; Analyzing dependencies...</p>
+<p>&gt; Identifying safe refactor strategies...</p>
+<p>&gt; Generating localized patch...</p>
+<p class="text-white mt-1">&gt; Solution Ready.</p>
+</div>
+</section>
+<!-- Code Diff View -->
+<section class="space-y-3">
+<h4 class="text-sm font-semibold text-[#595959] flex items-center gap-2">
+<span class="w-1 h-4 bg-[#1890FF] rounded-full block"></span>
+                    Code Diff View
+                </h4>
+<div class="border border-[#D9D9D9] rounded-lg overflow-hidden bg-white text-xs font-mono">
+<div class="flex border-b border-[#F0F0F0] bg-[#FAFAFA]">
+<div class="w-1/2 px-3 py-1 text-[#8C8C8C] border-r border-[#F0F0F0]">Original</div>
+<div class="w-1/2 px-3 py-1 text-[#8C8C8C]">AI Suggestion</div>
+</div>
+<div class="flex">
+<!-- Diff - Original -->
+<div class="w-1/2 bg-[#FFF1F0] border-r border-[#F0F0F0] p-2 overflow-x-auto custom-scrollbar" id="diff-original">
+<!-- Content injected via JS -->
+</div>
+<!-- Diff - Suggested -->
+<div class="w-1/2 bg-[#F6FFED] p-2 overflow-x-auto custom-scrollbar" id="diff-suggested">
+<!-- Content injected via JS -->
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- 抽屉底部操作栏 -->
+<div class="border-t border-[#F0F0F0] p-6 bg-white shrink-0 flex gap-3">
+<button class="flex-1 bg-[#52C41A] hover:bg-[#73d13d] text-white px-4 py-2.5 rounded-md font-medium text-sm transition-all flex items-center justify-center gap-2 shadow-sm hover:shadow active:scale-[0.98]" id="btn-accept" onclick="handleDecision('accept')">
+<span class="icon-[mdi--check]"></span>
+                Accept Fix
+            </button>
+<button class="flex-1 bg-[#FF4D4F] hover:bg-[#ff7875] text-white px-4 py-2.5 rounded-md font-medium text-sm transition-all flex items-center justify-center gap-2 shadow-sm hover:shadow active:scale-[0.98]" id="btn-reject" onclick="handleDecision('reject')">
+<span class="icon-[mdi--close]"></span>
+                Decline
+            </button>
+<button class="px-4 py-2.5 border border-[#D9D9D9] text-[#595959] rounded-md font-medium text-sm hover:bg-gray-50 transition-colors" onclick="closeDrawer()">
+                Skip
+            </button>
+</div>
+</div>
+<!-- JavaScript Logic -->
+<script>
+        // 1. Mock Data Source
+        const mockIssues = [
+            { 
+                id: 'E0602', 
+                file: 'src/utils/parser.py', 
+                desc: 'Undefined variable "count"', 
+                status: 'PENDING_USER_ACTION', 
+                severity: 'Error',
+                codeOriginal: 'def parse(data):\n    print(count)\n    return True',
+                codeFix: 'def parse(data):\n    count = 0\n    print(count)\n    return True'
+            },
+            { 
+                id: 'W0611', 
+                file: 'src/main.py', 
+                desc: 'Unused import os', 
+                status: 'IN_PROGRESS', 
+                severity: 'Warning',
+                codeOriginal: 'import os\n\ndef main():\n    pass',
+                codeFix: 'def main():\n    pass'
+            },
+            { 
+                id: 'C0103', 
+                file: 'src/models/user.py', 
+                desc: 'Invalid constant name "x"', 
+                status: 'INIT', 
+                severity: 'Info',
+                codeOriginal: 'x = 10\nclass User:',
+                codeFix: 'MAX_LIMIT = 10\nclass User:'
+            },
+            { 
+                id: 'R1705', 
+                file: 'src/api/views.py', 
+                desc: 'Unnecessary "else" after "return"', 
+                status: 'ACCEPTED', 
+                severity: 'Refactor',
+                codeOriginal: 'if x:\n    return True\nelse:\n    return False',
+                codeFix: 'if x:\n    return True\nreturn False'
+            },
+            { 
+                id: 'E0401', 
+                file: 'src/config.py', 
+                desc: 'Unable to import "requests"', 
+                status: 'REJECTED', 
+                severity: 'Error',
+                codeOriginal: 'import requests',
+                codeFix: '# TODO: Install requests\nimport requests'
+            },
+            { 
+                id: 'W0102', 
+                file: 'src/lib/cache.py', 
+                desc: 'Dangerous default value []', 
+                status: 'IN_PROGRESS', 
+                severity: 'Warning',
+                codeOriginal: 'def add(item, list=[]):\n    list.append(item)',
+                codeFix: 'def add(item, list=None):\n    if list is None:\n        list = []\n    list.append(item)'
+            }
+        ];
+
+        let currentIssues = [...mockIssues];
+        let activeIssueId = null;
+
+        // 2. Helper Render Functions
+        const renderStatus = (status) => {
+            const styles = {
+                'INIT': 'bg-gray-100 border-gray-300 text-gray-500',
+                'IN_PROGRESS': 'bg-blue-50 border-blue-200 text-blue-600',
+                'PENDING_USER_ACTION': 'bg-yellow-50 border-yellow-200 text-yellow-600',
+                'ACCEPTED': 'bg-green-50 border-green-200 text-green-600',
+                'REJECTED': 'bg-red-50 border-red-200 text-red-600'
+            };
+            
+            const icons = {
+                'INIT': '<span class="icon-[mdi--circle-outline]"></span>',
+                'IN_PROGRESS': '<span class="icon-[mdi--loading] animate-spin"></span>',
+                'PENDING_USER_ACTION': '<span class="icon-[mdi--clock-outline]"></span>',
+                'ACCEPTED': '<span class="icon-[mdi--check-circle]"></span>',
+                'REJECTED': '<span class="icon-[mdi--close-circle]"></span>'
+            };
+
+            const labels = {
+                'INIT': 'INIT',
+                'IN_PROGRESS': 'IN_PROGRESS',
+                'PENDING_USER_ACTION': 'PENDING',
+                'ACCEPTED': 'ACCEPTED',
+                'REJECTED': 'REJECTED'
+            };
+
+            return `
+                <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${styles[status] || styles['INIT']}">
+                    ${icons[status]}
+                    <span>${labels[status]}</span>
+                </div>
+            `;
+        };
+
+        const renderSeverity = (level) => {
+            const colors = {
+                'Error': 'bg-[#FF4D4F] text-white',
+                'Warning': 'bg-[#FA8C16] text-white',
+                'Info': 'bg-[#1890FF] text-white',
+                'Refactor': 'bg-[#722ED1] text-white'
+            };
+            return `<span class="px-2 py-0.5 rounded text-[10px] font-bold ${colors[level] || 'bg-gray-400 text-white'}">${level.toUpperCase()}</span>`;
+        };
+
+        const renderTable = () => {
+            const tbody = document.getElementById('issues-table-body');
+            const countEl = document.getElementById('issue-count');
+            
+            tbody.innerHTML = '';
+            countEl.innerText = currentIssues.length;
+
+            currentIssues.forEach(issue => {
+                const isActionable = issue.status === 'PENDING_USER_ACTION' || issue.status === 'ACCEPTED' || issue.status === 'REJECTED';
+                const actionBtn = isActionable 
+                    ? `<button onclick="openDrawer('${issue.id}')" class="text-[#1890FF] hover:text-[#40a9ff] hover:underline font-medium cursor-pointer">View Details</button>`
+                    : `<span class="text-gray-300">Wait AI...</span>`;
+
+                const row = document.createElement('tr');
+                row.className = "hover:bg-[#E6F7FF] transition-colors border-b border-[#F0F0F0] group";
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap">${renderStatus(issue.status)}</td>
+                    <td class="px-6 py-4 font-mono text-xs text-[#595959]">${issue.id}</td>
+                    <td class="px-6 py-4 text-[#262626] font-medium truncate max-w-[200px]" title="${issue.file}">${issue.file}</td>
+                    <td class="px-6 py-4 text-[#595959] truncate max-w-[300px] text-xs" title="${issue.desc}">${issue.desc}</td>
+                    <td class="px-6 py-4">${renderSeverity(issue.severity)}</td>
+                    <td class="px-6 py-4 text-right pr-8">${actionBtn}</td>
+                `;
+                tbody.appendChild(row);
+            });
+            
+            // Generate IDs for images
+            const images = document.querySelectorAll('img');
+            images.forEach((img, index) => {
+                if(!img.id) img.id = `img-${Math.floor(Math.random() * 100) + index}`;
+            });
+        };
+
+        // 3. User Interaction Logic
+        function openDrawer(id) {
+            const issue = currentIssues.find(i => i.id === id);
+            if (!issue) return;
+            
+            activeIssueId = id;
+            
+            // Populate Data
+            document.getElementById('drawer-title').innerText = `Pylint Issue: ${issue.id}`;
+            document.getElementById('drawer-file').innerText = issue.file;
+            document.getElementById('drawer-desc').innerText = issue.desc;
+            
+            // Populate Diff (Naive implementation for demo)
+            document.getElementById('diff-original').innerHTML = `<pre>${issue.codeOriginal.replace('\n', '<br>')}</pre>`;
+            document.getElementById('diff-suggested').innerHTML = `<pre>${issue.codeFix.replace('\n', '<br>')}</pre>`;
+
+            // Update Buttons based on Status Rules
+            const btnAccept = document.getElementById('btn-accept');
+            const btnReject = document.getElementById('btn-reject');
+
+            // Reset buttons
+            btnAccept.disabled = false;
+            btnAccept.classList.remove('opacity-50', 'cursor-not-allowed');
+            btnReject.disabled = false;
+            btnReject.classList.remove('opacity-50', 'cursor-not-allowed');
+
+            if (issue.status === 'ACCEPTED') {
+                // "User cannot reject an accepted resolution"
+                btnReject.disabled = true;
+                btnReject.classList.add('opacity-50', 'cursor-not-allowed');
+                btnAccept.innerHTML = '<span class="icon-[mdi--check-all]"></span> Accepted';
+            } else if (issue.status === 'REJECTED') {
+                // "User can still accept rejected resolution" -> Accept is enabled
+                btnReject.innerHTML = '<span class="icon-[mdi--close-circle]"></span> Rejected';
+                btnAccept.innerHTML = '<span class="icon-[mdi--check]"></span> Re-Accept';
+            } else {
+                btnAccept.innerHTML = '<span class="icon-[mdi--check]"></span> Accept Fix';
+                btnReject.innerHTML = '<span class="icon-[mdi--close]"></span> Decline';
+            }
+            
+            // Show Drawer
+            document.getElementById('issue-drawer').classList.remove('translate-x-full');
+            document.getElementById('drawer-backdrop').classList.remove('pointer-events-none', 'opacity-0');
+        }
+
+        function closeDrawer() {
+            document.getElementById('issue-drawer').classList.add('translate-x-full');
+            document.getElementById('drawer-backdrop').classList.add('pointer-events-none', 'opacity-0');
+            activeIssueId = null;
+        }
+
+        function handleDecision(decision) {
+            if (!activeIssueId) return;
+            
+            const issueIndex = currentIssues.findIndex(i => i.id === activeIssueId);
+            if (issueIndex === -1) return;
+
+            // Update Status in Data
+            if (decision === 'accept') {
+                currentIssues[issueIndex].status = 'ACCEPTED';
+                // Close Drawer on success as per typical UX
+                setTimeout(closeDrawer, 300);
+            } else if (decision === 'reject') {
+                currentIssues[issueIndex].status = 'REJECTED';
+                // Stay in drawer or close? Let's stay to allow "Re-accept", but update UI
+                openDrawer(activeIssueId); // Re-render buttons
+            }
+
+            renderTable();
+        }
+
+        function refreshIssues() {
+            // Visualize Refresh
+            const loader = document.getElementById('loading-state');
+            loader.classList.remove('hidden');
+            setTimeout(() => {
+                loader.classList.add('hidden');
+                // Could randomise statuses here to sim real refresh
+            }, 800);
+        }
+
+        // 4. Polling Simulation
+        // Simulates Backend Task 2 & Polling: Turning IN_PROGRESS items into PENDING_USER_ACTION
+        setInterval(() => {
+            let changed = false;
+            currentIssues = currentIssues.map(issue => {
+                if (issue.status === 'IN_PROGRESS' && Math.random() > 0.7) {
+                    changed = true;
+                    // Mock receiving data from backend
+                    return { ...issue, status: 'PENDING_USER_ACTION' };
+                }
+                return issue;
+            });
+            
+            if (changed) {
+                renderTable();
+                // If drawer is open and the active item changed, refresh drawer (unlikely for current flow)
+            }
+        }, 3000); // Check every 3 seconds
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            renderTable();
+            document.getElementById('last-updated').innerText = `Last updated: ${new Date().toLocaleTimeString()}`;
+        });
+
+    </script>
+</body>
+</html>
